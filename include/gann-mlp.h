@@ -20,12 +20,12 @@ extern "C" {
 #ifndef GNN_MLP_RANDOM
 /* We use the following for uniform random numbers between 0 and 1.
  * If you have a better function, redefine this macro. */
-#define GNN_MLP_RANDOM() (((double)rand())/RAND_MAX)
+#define GNN_MLP_RANDOM() (((float)rand())/RAND_MAX)
 #endif
 
 struct gnn_mlp_s;
 
-typedef double (*gnn_mlp_activate)(double a);
+typedef float (*gnn_mlp_activate)(float a);
 
 typedef struct gnn_mlp_s {
 
@@ -57,23 +57,23 @@ typedef struct gnn_mlp_s {
   /*!
   ** all weights (total_weights).
   */
-  double*               weight;
+  float*               weight;
 
   /*!
   ** stores input array and output of each neuron (total_neurons).
   */
-  double*               output;
+  float*               output;
 
   /*!
   ** stores delta of each hidden and output neuron (total_neurons - inputs).
   */
-  double*               delta;
+  float*               delta;
 
 }
 gnn_mlp_t;
 
-static double MAGICAL_WEIGHT_NUMBER = 1.0f;
-static double MAGICAL_LEARNING_NUMBER = 0.4f;
+static float MAGICAL_WEIGHT_NUMBER = 1.0f;
+static float MAGICAL_LEARNING_NUMBER = 0.4f;
 
 
 gnn_mlp_t *
@@ -93,15 +93,15 @@ gnn_mlp_free(gnn_mlp_t* mlp);
 **
 ** @return the output result
 */
-double const*
+float const*
 gnn_mlp_run(gnn_mlp_t const* mlp,
-            double const* inputs);
+            float const* inputs);
 
 void
 gnn_mlp_train(gnn_mlp_t   const*        mlp,
-              double      const*        inputs,
-              double      const*        desired_outputs,
-              double                    learning_rate);
+              float      const*        inputs,
+              float      const*        desired_outputs,
+              float                    learning_rate);
 
 gnn_mlp_t*
 gnn_mlp_read(FILE* in);

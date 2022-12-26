@@ -23,7 +23,7 @@ extern "C" {
 #define GANN_W2V_EXP_TABLE_SIZE                1000
 #define GANN_W2V_MAX_EXP                       6
 #define GANN_W2V_MAX_SENTENCE_LENGTH           1000
-#define GANN_W2V_MAX_CODE_LENGTH               40
+#define GANN_W2V_MAX_CODE_LENGTH               4000
 #define GANN_W2V_MIN_CHINESE                   0x4E00
 #define GANN_W2V_MAX_CHINESE                   0x9FA5
 

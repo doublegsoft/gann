@@ -49,80 +49,108 @@ gnn_w2v_word_compare(const void* a, const void* b)
 static void
 gnn_w2v_vocab_huffman(gnn_w2v_vocab_t* vocab)
 {
+#ifdef DEBUG
   FILE* jsout = fopen("../../debug.json", "w");
+#endif
   long long a, b, i, min1i, min2i, pos1, pos2, point[GANN_W2V_MAX_CODE_LENGTH];
   char code[GANN_W2V_MAX_CODE_LENGTH];
-  long long *count = (long long *)calloc(vocab->size * 2 + 1, sizeof(long long));
-  long long *binary = (long long *)calloc(vocab->size * 2 + 1, sizeof(long long));
-  long long *parent_node = (long long *)calloc(vocab->size * 2 + 1, sizeof(long long));
+  long long* count = (long long *)calloc(vocab->size * 2 + 1, sizeof(long long));
+  long long* binary = (long long *)calloc(vocab->size * 2 + 1, sizeof(long long));
+  long long* parent_node = (long long *)calloc(vocab->size * 2 + 1, sizeof(long long));
   for (a = 0; a < vocab->size; a++)
   {
     count[a] = vocab->words[a].count;
+#ifdef DEBUG
     fprintf(jsout, "SetCount(%d, %d, 0);\n", a, count[a]);
+#endif
   }
   for (a = vocab->size; a < vocab->size * 2; a++)
   {
     count[a] = 1e15;
+#ifdef DEBUG
     fprintf(jsout, "SetCount(%d, '-', 1);\n",a);
+#endif
   }
   pos1 = vocab->size - 1;
-  fprintf(jsout, "SetPos1(%d)\n",pos1);
   pos2 = vocab->size;
+#ifdef DEBUG
+  fprintf(jsout, "SetPos1(%d)\n",pos1);
   fprintf(jsout, "SetPos2(%d)\n",pos2);
-  // Following algorithm constructs the Huffman tree by adding one node at a time
+#endif
+  // following algorithm constructs the Huffman tree by adding one node at a time
   for (a = 0; a < vocab->size - 1; a++) {
-    // First, find two smallest nodes 'min1, min2'
+    // first, find two smallest nodes 'min1, min2'
     if (pos1 >= 0) {
-      if (count[pos1] < count[pos2]) {
+      if (count[pos1] < count[pos2])
+      {
         min1i = pos1;
-        fprintf(jsout, "SetMin1i(%d)\n",min1i);
         pos1--;
-        fprintf(jsout, "SetPos1(%d)\n",pos1);
-      } else {
-        min1i = pos2;
+#ifdef DEBUG
         fprintf(jsout, "SetMin1i(%d)\n",min1i);
+        fprintf(jsout, "SetPos1(%d)\n",pos1);
+#endif
+      }
+      else
+      {
+        min1i = pos2;
         pos2++;
+#ifdef DEBUG
+        fprintf(jsout, "SetMin1i(%d)\n",min1i);
         fprintf(jsout, "SetPos2(%d)\n",pos2);
+#endif
       }
     } else {
       min1i = pos2;
-      fprintf(jsout, "SetMin1i(%d)\n",min1i);
       pos2++;
+#ifdef DEBUG
+      fprintf(jsout, "SetMin1i(%d)\n",min1i);
       fprintf(jsout, "SetPos2(%d)\n",pos2);
+#endif
     }
     if (pos1 >= 0) {
       if (count[pos1] < count[pos2]) {
         min2i = pos1;
-        fprintf(jsout, "SetMin1i(%d)\n",min1i);
         pos1--;
+#ifdef DEBUG
+        fprintf(jsout, "SetMin1i(%d)\n",min1i);
         fprintf(jsout, "SetPos2(%d)\n",pos2);
-      } else {
+#endif
+      }
+      else
+      {
         min2i = pos2;
-        fprintf(jsout, "SetMin2i(%d)\n",min2i);
         pos2++;
+#ifdef DEBUG
+        fprintf(jsout, "SetMin2i(%d)\n",min2i);
         fprintf(jsout, "SetPos2(%d)\n",pos2);
+#endif
       }
     } else {
       min2i = pos2;
-      fprintf(jsout, "SetMin2i(%d)\n",min2i);
       pos2++;
+#ifdef DEBUG
+      fprintf(jsout, "SetMin2i(%d)\n",min2i);
       fprintf(jsout, "SetPos2(%d)\n",pos2);
+#endif
     }
     count[vocab->size + a] = count[min1i] + count[min2i];
-    fprintf(jsout, "SetCount(%d, %d, 2)\n", vocab->size + a, count[vocab->size + a]);
     parent_node[min1i] = vocab->size + a;
-    fprintf(jsout, "SetParent(%d, %d)\n", min1i, parent_node[min1i]);
     parent_node[min2i] = vocab->size + a;
-    fprintf(jsout, "SetParent(%d, %d)\n",min2i, parent_node[min2i]);
     binary[min2i] = 1;
+#ifdef DEBUG
+    fprintf(jsout, "SetCount(%d, %d, 2)\n", vocab->size + a, count[vocab->size + a]);
+    fprintf(jsout, "SetParent(%d, %d)\n", min1i, parent_node[min1i]);
+    fprintf(jsout, "SetParent(%d, %d)\n",min2i, parent_node[min2i]);
     fprintf(jsout, "SetBinary(%d, %d);\n\n", min2i, binary[min2i]);
+#endif
   }
 
   for (a = 0; a < vocab->size; a++)
   {
     b = a;
     i = 0;
-    while (1) {
+    while (1)
+    {
       code[i] = binary[b];
       point[i] = b;
       i++;
@@ -131,16 +159,26 @@ gnn_w2v_vocab_huffman(gnn_w2v_vocab_t* vocab)
     }
     vocab->words[a].codelen = i;
     vocab->words[a].point[0] = vocab->size - 2;
-    for (b = 0; b < i; b++) {
+    for (b = 0; b < i; b++)
+    {
       vocab->words[a].code[i - b - 1] = code[b];
       vocab->words[a].point[i - b] = point[b] - vocab->size;
     }
   }
+
+  FILE* pout = fopen("../../parent.txt", "w");
+  for (a = 0; a < vocab->size * 2 - 2; a++)
+  {
+    fprintf(pout, "%d = %lld = %lld\n", a, parent_node[a], count[a]);
+  }
+  fclose(pout);
+
   free(count);
   free(binary);
   free(parent_node);
-
+#ifdef DEBUG
   fclose(jsout);
+#endif
 }
 
 //static void
@@ -405,27 +443,47 @@ gnn_w2v_vocab_huffman(gnn_w2v_vocab_t* vocab)
 /*!
 **
 */
+static int ignore = 0;
+
 void
 gnn_w2v_word_read(char* word, FILE* fin)
 {
   int a = 0, ch;
   while (!feof(fin)) {
     ch = fgetc(fin);
-    if (ch == 13) continue;
+    if (ch == ':' && a == 0)
+    {
+      while (ch != '\n' && ch != '\r')
+      {
+        ch = fgetc(fin);
+      }
+    }
+    // if (ch == '\r' || ch == '\n') continue;
     if ((ch == ' ') || (ch == '\t') || (ch == '\n') || ch == '\r') {
       if (a > 0)
       {
-        if (ch == '\n' || ch == '\r') ungetc(ch, fin);
+        if (ch == '\n' || ch == '\r')
+        {
+          ignore = 0;
+          ungetc(ch, fin);
+        }
         break;
       }
-      if (ch == '\n' || ch == '\r') return;
+      if (ch == '\n' || ch == '\r')
+      {
+        ignore = 0;
+        return;
+      }
       else continue;
     }
     word[a] = ch;
     a++;
     if (a >= GANN_W2V_MAX_STRING - 1) a--;   // Truncate too long words
   }
-  word[a] = 0;
+  if (ignore)
+    word[0] = '\0';
+  else
+    word[a] = 0;
 }
 
 int
@@ -568,7 +626,7 @@ gnn_w2v_read(const char* train_file_path)
   {
     gnn_w2v_word_read(word, fin);
     // if encounter linefeed, the word is empty
-    if (strlen(word) == 0) continue;
+    if (strlen(word) == 0 || word[0] == 1) continue;
     if (feof(fin)) break;
 
     train_words++;
