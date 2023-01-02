@@ -7,7 +7,7 @@ int
 main(int argc, char* argv[])
 {
   int i, j;
-  gnn_w2v_vocab_t* vocab = gnn_w2v_read("../../data/analogy.txt");
+  gnn_w2v_vocab_t* vocab = gnn_w2v_read("../../data/chapter.txt");
   FILE* out = fopen("../../debug.txt", "w");
 
   for (i = 0; i < vocab->size; i++)
@@ -25,8 +25,9 @@ main(int argc, char* argv[])
     fprintf(out, "\n");
   }
   assert(vocab != NULL);
-  gnn_w2v_train(vocab, 100, 100, "./analogy.bin");
+  gnn_w2v_skipgram("../../data/chapter.txt", vocab, 5, 2);
+//  gnn_w2v_train(vocab, 100, 100, "./analogy.bin");
 
-  gnn_w2v_t* w2v = gnn_w2v_build(vocab, 100);
+//  gnn_w2v_t* w2v = gnn_w2v_build(vocab, 100);
   return 0;
 }

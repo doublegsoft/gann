@@ -12,8 +12,12 @@
 #include <string.h>
 
 #include <gfc.h>
+#include <gnum.h>
 
 #include "gann-w2v.h"
+
+#define MAX_EXP             6
+#define EXP_TABLE_SIZE      1000
 
 typedef struct gnn_w2v_train_params_s
 {
@@ -35,7 +39,11 @@ gnn_w2v_train_params_t;
 
 // Maximum 30 * 0.7 = 21M words in the vocabulary
 const int vocab_hash_size = 30000000;
+
 long long vocab_max_size = 1000;
+
+// unigram table size
+const static int table_size = 1e8;
 
 int cbow = 1, debug_mode = 2, window = 5, min_count = 0, num_threads = 12, min_reduce = 1;
 int cwe_type = 2, multi_emb = 3, *embed_count, cwin = 5;
@@ -506,7 +514,9 @@ gnn_w2v_word_index(gnn_w2v_vocab_t* vocab, const char* word)
     if (vocab->hashes[hash] == -1)
       return -1;
     if (!strcmp(word, vocab->words[vocab->hashes[hash]].word))
+    {
       return vocab->hashes[hash];
+    }
     hash = (hash + 1) % vocab_hash_size;
   }
   return -1;
@@ -517,20 +527,23 @@ gnn_w2v_word_index(gnn_w2v_vocab_t* vocab, const char* word)
 ** build
 */
 void
-gnn_w2v_unigram_build(gnn_w2v_vocab_t* vocab) {
+gnn_w2v_vocab_unigram(gnn_w2v_vocab_t* vocab)
+{
   int a, i;
   long long train_words_pow = 0;
   float d1, power = 0.75;
-  int* table = (int *)malloc(vocab->size * sizeof(int));
+  vocab->unigram = (int*) malloc(table_size * sizeof(int));
   for (a = 0; a < vocab->size; a++)
-    train_words_pow += pow(vocab->words[i].count, power);
+    train_words_pow += pow(vocab->words[a].count, power);
   i = 0;
-  d1 = pow(vocab->words[i].count, power) / (float)train_words_pow;
-  for (a = 0; a < vocab->size; a++) {
-    table[a] = i;
-    if (a / (float)vocab->size > d1) {
+  d1 = pow(vocab->words[i].count, power) / (double)train_words_pow;
+  for (a = 0; a < table_size; a++)
+  {
+    vocab->unigram[a] = i;
+    if ((a / (float)table_size) > d1)
+    {
       i++;
-      d1 += pow(vocab->words[i].count, power) / (float)train_words_pow;
+      d1 += pow(vocab->words[i].count, power) / (double)train_words_pow;
     }
     if (i >= vocab->size)
       i = vocab->size - 1;
@@ -596,13 +609,13 @@ gnn_w2v_read(const char* train_file_path)
 {
   char            word[GANN_W2V_MAX_STRING];
   FILE*           fin;
-  llong       a, i;
-  llong            train_words = 0;
+  llong           a, i;
+  llong           train_words = 0;
 
   /*!
   ** 初始化词汇表, UTF-8编码
   */
-  gnn_w2v_vocab_t* vocab = calloc(1, sizeof(gnn_w2v_vocab_t));
+  gnn_w2v_vocab_t* vocab = (gnn_w2v_vocab_t*) calloc(1, sizeof(gnn_w2v_vocab_t));
   vocab->words = (gnn_w2v_word_t *)calloc(vocab_max_size, sizeof(gnn_w2v_word_t));
   vocab->hashes = calloc(vocab_hash_size, sizeof(uint));
   vocab->size = 0;
@@ -654,9 +667,268 @@ gnn_w2v_read(const char* train_file_path)
 #endif
   fclose(fin);
 
+  gnn_w2v_vocab_unigram(vocab);
   gnn_w2v_vocab_sort(vocab);
   gnn_w2v_vocab_huffman(vocab);
   return vocab;
+}
+
+void
+gnn_w2v_skipgram(const char*            text_path,
+                 gnn_w2v_vocab_t*       vocab,
+                 uint                   sample,
+                 uint                   window)
+{
+  uint i = 0;
+  uint a, b, c, d;
+  long long l1, l2, target, label;
+  uint sentence_length = 0;
+  uint sentence_position = 0;
+  uint local_iter = 100;
+  uint word_index;
+  uint negative = 3;
+  uint last_word;
+  ullong next_random;
+  ullong train_words = 0;
+  ullong sen[GANN_W2V_MAX_SENTENCE_LENGTH];
+  real f, g;
+  int hierarchical_softmax = 1;
+  real learning_rate = 0.003;
+
+  gnn_w2v_t* w2v = gnn_w2v_build(vocab, 300);
+
+  uint feature_size = 300;
+  real* Wh = (real*)calloc(vocab->size * feature_size, sizeof(real));
+  real* Wo = (real*)calloc(vocab->size * feature_size, sizeof(real));
+  real* Wn = (real*)calloc(vocab->size * feature_size, sizeof(real));
+  real *neu1 = (real *)calloc(feature_size, sizeof(real));
+  real *neu1e = (real *)calloc(feature_size, sizeof(real));
+
+  // Allocate the table, 1000 floats.
+  real* expTable = (real *)malloc((EXP_TABLE_SIZE + 1) * sizeof(real));
+
+    // For each position in the table...
+  for (i = 0; i < EXP_TABLE_SIZE; i++)
+  {
+    expTable[i] = exp((i / (real)EXP_TABLE_SIZE * 2 - 1) * MAX_EXP);
+    expTable[i] = expTable[i] / (expTable[i] + 1);
+  }
+
+  for (i = 0; i < vocab->size; i++)
+    train_words += vocab->words[i].count;
+
+  FILE *fi = fopen(text_path, "rb");
+  fseek(fi, 0, SEEK_SET);
+
+  i = 0;
+  char word[128] = {'\0'};
+  while(1)
+  {
+    if (sentence_length == 0)
+    {
+      while(1)
+      {
+        gnn_w2v_word_read(word, fi);
+
+        word_index = gnn_w2v_word_index(vocab, word);
+//        printf("%d = %s\n", word_index, word);
+
+        if (feof(fi)) break;
+        if (word_index == -1) continue;
+//        if (word_index == 0 /* skip '<s/>' */) break;
+
+        if (sample > 0)
+        {
+          real ran = (sqrt(vocab->words[word_index].count / (sample * vocab->size)) + 1) * (sample * train_words) / vocab->words[word_index].count;
+          next_random = next_random * (unsigned long long)25214903917 + 11;
+          if (ran < (next_random & 0xFFFF) / (real)65536) continue;
+        }
+        sen[sentence_length] = word_index;
+        sentence_length++;
+        if (sentence_length >= GANN_W2V_MAX_SENTENCE_LENGTH) break;
+      }
+      sentence_position = 0;
+    }
+    if (feof(fi))
+    {
+      local_iter--;
+      if (local_iter == 0)
+      {
+        break;
+      }
+//      sentence_length = 0;
+      fseek(fi, 0, SEEK_SET);
+//      continue;
+    }
+
+    word_index = sen[sentence_position];
+
+    if (word_index == -1) continue;
+
+    for (c = 0; c < feature_size; c++) neu1[c] = 0;
+    for (c = 0; c < feature_size; c++) neu1e[c] = 0;
+
+    next_random = next_random * (unsigned long long)25214903917 + 11;
+    b = next_random % window;
+
+    /*!
+    ** sliding window algorithm
+    */
+    for (a = b; a < window * 2 + 1 - b; a++)
+    {
+      if (a != window)
+      {
+
+        // Convert the window offset 'a' into an index 'c' into the sentence
+        // array.
+        c = sentence_position - window + a;
+        // Verify c isn't outside the bounds of the sentence.
+        if (c < 0) continue;
+        if (c >= sentence_length) continue;
+
+        // Get the context word. That is, get the id of the word (its index in
+        // the vocab table).
+        last_word = sen[c];
+//        printf("last word = %d\n", last_word);
+        // At this point we have two words identified:
+        //   'word' - The word at our current position in the sentence (in the
+        //            center of a context window).
+        //   'last_word' - The word at a position within the context window.
+
+        // Verify that the word exists in the vocab (I don't think this should
+        // ever be the case?)
+        if (last_word == -1) continue;
+        if (word_index >= vocab->size) continue;
+//        printf("(%d, %d)\n", word_index, last_word);
+//        printf("(%s, %s)\n", vocab->words[word_index].word, vocab->words[last_word].word);
+
+        // Calculate the index of the start of the weights for 'last_word'.
+        l1 = last_word * feature_size;
+
+        for (c = 0; c < feature_size; c++) neu1e[c] = 0;
+
+        // HIERARCHICAL SOFTMAX
+        if (hierarchical_softmax)
+        {
+          for (d = 0; d < vocab->words[word_index].codelen; d++)
+          {
+            f = 0;
+            l2 = vocab->words[word_index].point[d] * feature_size;
+            // Propagate hidden -> output
+            for (c = 0; c < feature_size; c++)
+              f += w2v->hidden_weights[c + l1] * w2v->output_weights[c + l2];
+            if (f <= -MAX_EXP) continue;
+            else if (f >= MAX_EXP) continue;
+            else f = expTable[(int)((f + MAX_EXP) * (EXP_TABLE_SIZE / MAX_EXP / 2))];
+            // 'g' is the gradient multiplied by the learning rate
+            g = (1 - vocab->words[word_index].code[d] - f) * learning_rate;
+            // Propagate errors output -> hidden
+            for (c = 0; c < feature_size; c++)
+              w2v->hidden_neurons[c] += g * w2v->output_weights[c + l2];
+            // Learn weights hidden -> output
+            for (c = 0; c < feature_size; c++)
+              w2v->output_weights[c + l2] += g * w2v->hidden_weights[c + l1];
+          }
+        }
+
+        // NEGATIVE SAMPLING
+        // Rather than performing backpropagation for every word in our
+        // vocabulary, we only perform it for a few words (the number of words
+        // is given by 'negative').
+        // These words are selected using a "unigram" distribution, which is generated
+        // in the function InitUnigramTable
+        if (negative > 0)
+        {
+          for (d = 0; d < negative + 1; d++)
+          {
+            // On the first iteration, we're going to train the positive sample.
+            if (d == 0)
+            {
+              target = word_index;
+              label = 1;
+            // On the other iterations, we'll train the negative samples.
+            } else {
+              // Pick a random word to use as a 'negative sample'; do this using
+              // the unigram table.
+
+              // Get a random integer.
+              next_random = next_random * (unsigned long long)25214903917 + 11;
+
+              // 'target' becomes the index of the word in the vocab to use as
+              // the negative sample.
+              target = vocab->unigram[(next_random >> 16) % table_size];
+
+              // If the target is the special end of sentence token, then just
+              // pick a random word from the vocabulary instead.
+              if (target == 0) target = next_random % (vocab->size - 1) + 1;
+
+              // Don't use the positive sample as a negative sample!
+              if (target == word_index) continue;
+
+              // Mark this as a negative example.
+              label = 0;
+            }
+
+            // Get the index of the target word in the output layer.
+            l2 = target * feature_size;
+            printf("l1 = %lld, l2 = %lld\n", l1, l2);
+            /*!
+            ** At this point, our two words are represented by their index into
+            ** the layer weights.
+            ** l1 - The index of our input word within the hidden layer weights.
+            ** l2 - The index of our output word within the output layer weights.
+            ** label - Whether this is a positive (1) or negative (0) example.
+            **
+            ** Calculate the dot-product between the input words weights (in
+            ** syn0) and the output word's weights (in syn1neg).
+            ** Note that this calculates the dot-product manually using a for
+            ** loop over the vector elements!
+            */
+            f = 0;
+            for (c = 0; c < feature_size; c++)
+              f += w2v->hidden_weights[c + l1] * w2v->negative_samplings[c + l2];
+
+            // This block does two things:
+            //   1. Calculates the output of the network for this training
+            //      pair, using the expTable to evaluate the output layer
+            //      activation function.
+            //   2. Calculate the error at the output, stored in 'g', by
+            //      subtracting the network output from the desired output,
+            //      and finally multiply this by the learning rate.
+            if (f > MAX_EXP) g = (label - 1) * learning_rate;
+            else if (f < -MAX_EXP) g = (label - 0) * learning_rate;
+            else g = (label - expTable[(int)((f + MAX_EXP) * (EXP_TABLE_SIZE / MAX_EXP / 2))]) * learning_rate;
+
+            // Multiply the error by the output layer weights.
+            // Accumulate these gradients over the negative samples and the one
+            // positive sample.
+            for (c = 0; c < feature_size; c++)
+              w2v->hidden_neurons[c] += g * w2v->negative_samplings[c + l2];
+
+            // Update the output layer weights by multiplying the output error
+            // by the hidden layer weights.
+            for (c = 0; c < feature_size; c++)
+              w2v->hidden_weights[c + l2] += g * w2v->hidden_weights[c + l1];
+          }
+        } // if (negative > 0)
+
+        /*!
+        ** Once the hidden layer gradients for the negative samples plus the
+        ** one positive sample have been accumulated, update the hidden layer
+        ** weights.
+        ** Note that we do not average the gradient before applying it.
+        */
+        for (c = 0; c < feature_size; c++) w2v->hidden_weights[c + l1] += w2v->hidden_neurons[c];
+      }
+    }
+    sentence_position++;
+    if (sentence_position >= sentence_length)
+    {
+      sentence_length = 0;
+      continue;
+    }
+  }
+  fclose(fi);
 }
 
 void
@@ -770,32 +1042,72 @@ gnn_w2v_build(gnn_w2v_vocab_t* vocab, uint dimensions)
   int i, j;
   ullong next_random = 1;
 
-  rs = posix_memalign((void **)&ret->hidden_neurons,
+  rs = posix_memalign((void **)&ret->hidden_weights,
                       128,
                       ret->vocab_size * ret->dim_num * sizeof(real));
-  if (ret->hidden_neurons == NULL)
+  if (ret->hidden_weights == NULL)
   {
-    fprintf(stderr, "error: failed to allocate memories for hidden neurons in %d of %s.\n", __LINE__, __FILE__);
+    fprintf(stderr, "error: failed to allocate memories for hidden weights in %d of %s.\n", __LINE__, __FILE__);
     exit(1);
   }
   for (i = 0; i < ret->vocab_size; i++)
     for (j = 0; j < ret->dim_num; j++)
     {
       next_random = next_random * (unsigned long long)25214903917 + 11;
-      ret->hidden_neurons[i * ret->dim_num + j] = (((next_random & 0xFFFF) / (real)65536) - 0.5) / ret->dim_num;
+      ret->hidden_weights[i * ret->dim_num + j] = (((next_random & 0xFFFF) / (real)65536) - 0.5) / ret->dim_num;
     }
+
+  rs = posix_memalign((void **)&ret->output_weights,
+                      128,
+                      ret->vocab_size * ret->dim_num * sizeof(real));
+  if (ret->output_weights == NULL)
+  {
+    fprintf(stderr, "error: failed to allocate memories for output weights in %d of %s.\n", __LINE__, __FILE__);
+    exit(1);
+  }
+  for (i = 0; i < ret->vocab_size; i++)
+    for (j = 0; j < ret->dim_num; j++)
+    {
+      next_random = next_random * (unsigned long long)25214903917 + 11;
+      ret->output_weights[i * ret->dim_num + j] = (((next_random & 0xFFFF) / (real)65536) - 0.5) / ret->dim_num;
+    }
+
+  rs = posix_memalign((void **)&ret->negative_samplings,
+                      128,
+                      ret->vocab_size * ret->dim_num * sizeof(real));
+  if (ret->negative_samplings == NULL)
+  {
+    fprintf(stderr, "error: failed to allocate memories for negative samplings in %d of %s.\n", __LINE__, __FILE__);
+    exit(1);
+  }
+  for (i = 0; i < ret->vocab_size; i++)
+    for (j = 0; j < ret->dim_num; j++)
+    {
+      next_random = next_random * (unsigned long long)25214903917 + 11;
+      ret->negative_samplings[i * ret->dim_num + j] = (((next_random & 0xFFFF) / (real)65536) - 0.5) / ret->dim_num;
+    }
+
+  rs = posix_memalign((void **)&ret->hidden_neurons,
+                      128,
+                      ret->dim_num * sizeof(real));
+  if (ret->hidden_neurons == NULL)
+  {
+    fprintf(stderr, "error: failed to allocate memories for hidden neurons in %d of %s.\n", __LINE__, __FILE__);
+    exit(1);
+  }
+  for (j = 0; j < ret->dim_num; j++)
+    ret->hidden_neurons[j] = 0;
 
   rs = posix_memalign((void **)&ret->softmax_neurons,
                       128,
-                      ret->vocab_size * ret->dim_num * sizeof(real));
+                      ret->dim_num * sizeof(real));
   if (ret->softmax_neurons == NULL)
   {
     fprintf(stderr, "error: failed to allocate memories for softmax neurons in %d of %s.\n", __LINE__, __FILE__);
     exit(1);
   }
-  for (i = 0; i < ret->vocab_size; i++)
-    for (j = 0; j < ret->dim_num; j++)
-      ret->softmax_neurons[i * ret->dim_num + j] = 0;
+  for (j = 0; j < ret->dim_num; j++)
+    ret->softmax_neurons[j] = 0;
 
   rs = posix_memalign((void **)&ret->negative_samplings,
                       128,

@@ -43,20 +43,30 @@ typedef struct gnn_w2v_s
   uint        vocab_size;
 
   /*!
+  **
+  */
+  real*      hidden_weights;
+
+  /*!
+  **
+  */
+  real*      output_weights;
+
+  /*!
   ** the hidden neurons, and the word2vec just has one hidden layer,
   ** and the size = vocab_size * dim_num
   */
-  float*      hidden_neurons;
+  real*      hidden_neurons;
 
   /*!
   ** the softmax neurons, and the size = vocab_size * dim_num
   */
-  float*      softmax_neurons;
+  real*      softmax_neurons;
 
   /*!
   ** the negative samplings, and the size = vocab_size * dim_num
   */
-  float*      negative_samplings;
+  real*      negative_samplings;
 
   /*!
   ** the size of distinct characters.
@@ -96,6 +106,8 @@ typedef struct gnn_w2v_word_s
 
   float*      weights;
 
+  uint        index;
+
 }
 gnn_w2v_word_t;
 
@@ -120,6 +132,8 @@ typedef struct gnn_w2v_vocab_s
   ** the size of characters
   */
   llong                 char_size;
+
+  int*                  unigram;
 }
 gnn_w2v_vocab_t;
 
@@ -167,6 +181,12 @@ gnn_w2v_train(gnn_w2v_vocab_t*      vocab,
 gnn_w2v_t*
 gnn_w2v_build(gnn_w2v_vocab_t* vocab,
               uint dimensions);
+
+void
+gnn_w2v_skipgram(const char*            text_path,
+                 gnn_w2v_vocab_t*       vocab,
+                 uint                   sample,
+                 uint                   window);
 
 #ifdef __cplusplus
 }

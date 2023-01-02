@@ -11,14 +11,14 @@ set(GNUM			"/Users/christian/export/local/works/doublegsoft.open/gnum/03.Develop
 set(GNUM_INC	"${GNUM}/include")
 set(GNUM_LIB	"${GNUM}/build/darwin")
 
-include_directories(include ${GFC_INC})
+include_directories(include ${GFC_INC} ${GNUM_INC})
 
 add_library(gann STATIC
   src/gann-mlp.c
   src/gann.c
 )
 
-target_link_libraries(gann PRIVATE ${GNUM_LIB}/libgnum.a ${GNUM_LIB}/libgfc.a)
+target_link_libraries(gann PRIVATE ${GNUM_LIB}/libgfc.a ${GNUM_LIB}/libgnum.a)
 
 add_executable(gann-mlp-test-iris
   src/gann-mlp.c
@@ -26,10 +26,10 @@ add_executable(gann-mlp-test-iris
   test/gann-mlp-test-iris.c
 )
 
-add_executable(gann-w2v-test-analogy
+add_executable(gann-w2v-test-skipgram
   src/gann-w2v.c
   src/gann.c
-  test/gann-w2v-test-analogy.c
+  test/gann-w2v-test-skipgram.c
 )
 
-target_link_libraries(gann-w2v-test-analogy PRIVATE ${GFC_LIB}/libgfc.a)
+target_link_libraries(gann-w2v-test-skipgram PRIVATE ${GFC_LIB}/libgfc.a ${GNUM_LIB}/libgnum.a)
