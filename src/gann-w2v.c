@@ -695,14 +695,8 @@ gnn_w2v_skipgram(const char*            text_path,
   int hierarchical_softmax = 1;
   real learning_rate = 0.003;
 
-  gnn_w2v_t* w2v = gnn_w2v_build(vocab, 300);
-
   uint feature_size = 300;
-  real* Wh = (real*)calloc(vocab->size * feature_size, sizeof(real));
-  real* Wo = (real*)calloc(vocab->size * feature_size, sizeof(real));
-  real* Wn = (real*)calloc(vocab->size * feature_size, sizeof(real));
-  real *neu1 = (real *)calloc(feature_size, sizeof(real));
-  real *neu1e = (real *)calloc(feature_size, sizeof(real));
+  gnn_w2v_t* w2v = gnn_w2v_new(vocab, feature_size);
 
   // Allocate the table, 1000 floats.
   real* expTable = (real *)malloc((EXP_TABLE_SIZE + 1) * sizeof(real));
@@ -765,8 +759,8 @@ gnn_w2v_skipgram(const char*            text_path,
 
     if (word_index == -1) continue;
 
-    for (c = 0; c < feature_size; c++) neu1[c] = 0;
-    for (c = 0; c < feature_size; c++) neu1e[c] = 0;
+    for (c = 0; c < feature_size; c++) w2v->hidden_neurons[c] = 0;
+    for (c = 0; c < feature_size; c++) w2v->hidden_neurons[c] = 0;
 
     next_random = next_random * (unsigned long long)25214903917 + 11;
     b = next_random % window;
@@ -805,7 +799,7 @@ gnn_w2v_skipgram(const char*            text_path,
         // Calculate the index of the start of the weights for 'last_word'.
         l1 = last_word * feature_size;
 
-        for (c = 0; c < feature_size; c++) neu1e[c] = 0;
+        for (c = 0; c < feature_size; c++) w2v->hidden_neurons[c] = 0;
 
         // HIERARCHICAL SOFTMAX
         if (hierarchical_softmax)
@@ -929,6 +923,7 @@ gnn_w2v_skipgram(const char*            text_path,
     }
   }
   fclose(fi);
+  gnn_w2v_free(w2v);
 }
 
 void
@@ -1031,7 +1026,7 @@ gnn_w2v_train(gnn_w2v_vocab_t*          vocab,
 
 
 gnn_w2v_t*
-gnn_w2v_build(gnn_w2v_vocab_t* vocab, uint dimensions)
+gnn_w2v_new(gnn_w2v_vocab_t* vocab, uint dimensions)
 {
   gnn_w2v_t* ret = (gnn_w2v_t*) malloc(sizeof(gnn_w2v_t));
   ret->vocab_size = vocab->size;
@@ -1153,4 +1148,24 @@ gnn_w2v_build(gnn_w2v_vocab_t* vocab, uint dimensions)
   }
 
   return ret;
+}
+
+void
+gnn_w2v_free(gnn_w2v_t* w2v)
+{
+  if (w2v->hidden_neurons != NULL)
+    free(w2v->hidden_neurons);
+  if (w2v->hidden_weights != NULL)
+    free(w2v->hidden_weights);
+  if (w2v->output_weights != NULL)
+    free(w2v->output_weights);
+  if (w2v->softmax_neurons != NULL)
+    free(w2v->softmax_neurons);
+  if (w2v->char_weights != NULL)
+    free(w2v->char_weights);
+  if (w2v->embedded_count != NULL)
+    free(w2v->embedded_count);
+  if (w2v->negative_samplings != NULL)
+    free(w2v->negative_samplings);
+  free(w2v);
 }

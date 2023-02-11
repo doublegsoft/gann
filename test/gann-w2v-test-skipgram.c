@@ -27,7 +27,5 @@ main(int argc, char* argv[])
   assert(vocab != NULL);
   gnn_w2v_skipgram("../../data/chapter.txt", vocab, 5, 2);
 //  gnn_w2v_train(vocab, 100, 100, "./analogy.bin");
-
-//  gnn_w2v_t* w2v = gnn_w2v_build(vocab, 100);
   return 0;
 }

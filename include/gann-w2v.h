@@ -163,6 +163,13 @@ gnn_w2v_vocab_add(gnn_w2v_vocab_t* vocab, char *word, int is_non_comp);
 void
 gnn_w2v_vocab_sort(gnn_w2v_vocab_t* vocab);
 
+gnn_w2v_t*
+gnn_w2v_new(gnn_w2v_vocab_t* vocab,
+            uint dimensions);
+
+void
+gnn_w2v_free(gnn_w2v_t* w2v);
+
 /*!
 **
 */
@@ -177,10 +184,6 @@ gnn_w2v_train(gnn_w2v_vocab_t*      vocab,
               uint                  dims,
               uint                  layer_size,
               const char*           model_file_path);
-
-gnn_w2v_t*
-gnn_w2v_build(gnn_w2v_vocab_t* vocab,
-              uint dimensions);
 
 void
 gnn_w2v_skipgram(const char*            text_path,
