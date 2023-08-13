@@ -13,7 +13,7 @@
 
 const char *iris_data = "../../data/iris.data";
 
-double *input, *class;
+float *input, *class;
 int samples;
 const char *class_names[] =
     { "Iris-setosa", "Iris-versicolor", "Iris-virginica" };
@@ -41,15 +41,15 @@ void load_data()
   /*!
   ** allocate memory for input and output data.
   */
-  input = malloc(sizeof(double) * samples * 4);
-  class = malloc(sizeof(double) * samples * 3);
+  input = malloc(sizeof(float) * samples * 4);
+  class = malloc(sizeof(float) * samples * 3);
 
   /* Read the file into our arrays. */
   int i, j;
   for (i = 0; i < samples; ++i)
   {
-    double *p = input + i * 4;
-    double *c = class + i * 3;
+    float *p = input + i * 4;
+    float *c = class + i * 3;
     c[0] = c[1] = c[2] = 0.0;
 
     if (fgets(line, 1024, in) == NULL)
@@ -80,8 +80,7 @@ void load_data()
       printf("Unknown class %s.\n", split);
       exit(1);
     }
-
-    printf("Data point %d is %f %f %f %f  ->   %f %f %f\n", i, p[0], p[1], p[2], p[3], c[0], c[1], c[2]);
+//    printf("Data point %d is %f %f %f %f  ->   %f %f %f\n", i, p[0], p[1], p[2], p[3], c[0], c[1], c[2]);
   }
 
   fclose(in);
@@ -89,7 +88,6 @@ void load_data()
 
 int main(int argc, char *argv[])
 {
-  printf("GENANN example 4.\n");
   printf("Train an ANN on the IRIS dataset using backpropagation.\n");
 
   srand(time(0));
@@ -98,29 +96,29 @@ int main(int argc, char *argv[])
   load_data();
 
   /* 4 inputs.
-   * 1 hidden layer(s) of 4 neurons.
+   * 2 hidden layer(s) of 6 neurons.
    * 3 outputs (1 per class)
    */
-  gnn_mlp_t* mlp = gnn_mlp_new(4, 2, 6, 3);
+  gnn_mlp_t* mlp = gnn_mlp_new(4, 1, 4, 3);
 
   int i, j;
   int loops = 5000;
 
   /* Train the network with backpropagation. */
-  printf("Training for %d loops over data.\n", loops);
+
   for (i = 0; i < loops; ++i)
   {
     for (j = 0; j < samples; ++j)
     {
       gnn_mlp_train(mlp, input + j * 4, class + j * 3, .01);
     }
-    /* printf("%1.2f ", xor_score(ann)); */
   }
+  printf("trained for %d loops over data.\n", loops);
 
   int correct = 0;
   for (j = 0; j < samples; ++j)
   {
-    const double *guess = gnn_mlp_run(mlp, input + j * 4);
+    const float *guess = gnn_mlp_forward(mlp, input + j * 4);
     if (class[j * 3 + 0] == 1.0)
     {
       if (guess[0] > guess[1] && guess[0] > guess[2])
@@ -139,13 +137,13 @@ int main(int argc, char *argv[])
     else
     {
       printf("Logic error.\n");
-      exit(1);
+       exit(1);
     }
     gnn_vec_print(guess, 3);
   }
 
   printf("%d/%d correct (%0.1f%%).\n", correct, samples,
-      (double) correct / samples * 100.0);
+      (float) correct / samples * 100.0);
 
   gnn_mlp_free(mlp);
   free(input);

@@ -14,12 +14,56 @@
 
 #include "gann-mlp.h"
 
+#define LOOKUP_SIZE 4096
+
+#ifdef __GNUC__
+#define likely(x)       __builtin_expect(!!(x), 1)
+#define unlikely(x)     __builtin_expect(!!(x), 0)
+#define unused          __attribute__((unused))
+#else
+#define likely(x)       x
+#define unlikely(x)     x
+#define unused
+#pragma warning(disable : 4996) /* For fscanf */
+#endif
+
+static const float sigmoid_dom_min = -15.0;
+static const float sigmoid_dom_max = 15.0;
+static float interval;
+static float lookup[LOOKUP_SIZE];
+
 static float
 gnn_mlp_sigmoid(float a)
 {
   if (a < -45.0) return 0;
   if (a > 45.0) return 1;
   return 1.0 / (1 + exp(-a));
+}
+
+static float
+gnn_mlp_sigmoid_lookup(float a) {
+  assert(!isnan(a));
+
+  if (a < sigmoid_dom_min) return lookup[0];
+  if (a >= sigmoid_dom_max) return lookup[LOOKUP_SIZE - 1];
+
+  size_t j = (size_t)((a-sigmoid_dom_min)*interval+0.5);
+
+  /* Because floating point... */
+  if (unlikely(j >= LOOKUP_SIZE)) return lookup[LOOKUP_SIZE - 1];
+
+  return lookup[j];
+}
+
+static void
+gnn_mlp_sigmoid_init(void) {
+  const float f = (sigmoid_dom_max - sigmoid_dom_min) / LOOKUP_SIZE;
+  int i;
+
+  interval = LOOKUP_SIZE / (sigmoid_dom_max - sigmoid_dom_min);
+  for (i = 0; i < LOOKUP_SIZE; ++i) {
+    lookup[i] = gnn_mlp_sigmoid(sigmoid_dom_min + f * i);
+  }
 }
 
 static float
@@ -40,49 +84,54 @@ gnn_mlp_randomize(gnn_mlp_t* mlp) {
   for (i = 0; i < mlp->total_weights; ++i) {
     float r = GNN_MLP_RANDOM();
     /* Sets weights from -0.5 to 0.5. */
-    mlp->weight[i] = r - 0.5;
+    mlp->weights[i] = r - 0.5;
   }
 }
 
 gnn_mlp_t*
-gnn_mlp_new(int inputs, int hidden_layers, int hidden, int outputs)
+gnn_mlp_new(int input_number,
+            int hidden_layer_number,
+            int hidden_neuron_number,
+            int output_number)
 {
-  if (hidden_layers < 0) return 0;
-  if (inputs < 1) return 0;
-  if (outputs < 1) return 0;
-  if (hidden_layers > 0 && hidden < 1) return 0;
+  if (hidden_layer_number < 0) return NULL;
+  if (input_number < 1) return NULL;
+  if (output_number < 1) return NULL;
+  if (hidden_layer_number > 0 && hidden_neuron_number < 1) return NULL;
 
 
-  const int hidden_weights = hidden_layers ? (inputs + 1) * hidden + (hidden_layers - 1) * (hidden + 1) * hidden : 0;
-  const int output_weights = (hidden_layers ? (hidden + 1) : (inputs + 1)) * outputs;
+  const int hidden_weights = hidden_layer_number ? (input_number + 1) * hidden_neuron_number + (hidden_layer_number - 1) * (hidden_neuron_number + 1) * hidden_neuron_number : 0;
+  const int output_weights = (hidden_layer_number ? (hidden_neuron_number + 1) : (input_number + 1)) * output_number;
   const int total_weights = (hidden_weights + output_weights);
 
-  const int total_neurons = (inputs + hidden * hidden_layers + outputs);
+  const int total_neurons = (input_number + hidden_neuron_number * hidden_layer_number + output_number);
 
-  /* Allocate extra size for weights, outputs, and deltas. */
-  const int size = sizeof(gnn_mlp_t) + sizeof(float) * (total_weights + total_neurons + (total_neurons - inputs));
-  gnn_mlp_t*  ret = malloc(size);
-  if (!ret) return 0;
+  /*!
+  ** allocate extra size for weights, outputs, and biases.
+  */
+  const int size = sizeof(gnn_mlp_t) + sizeof(float) * (total_weights + total_neurons + (total_neurons - input_number));
 
-  ret->inputs = inputs;
-  ret->hidden_layers = hidden_layers;
-  ret->hidden = hidden;
-  ret->outputs = outputs;
+  gnn_mlp_t*  ret = (gnn_mlp_t*)malloc(size);
+  if (!ret) return NULL;
+
+  ret->input_number = input_number;
+  ret->hidden_layer_number = hidden_layer_number;
+  ret->hidden_neuron_number = hidden_neuron_number;
+  ret->output_number = output_number;
 
   ret->total_weights = total_weights;
   ret->total_neurons = total_neurons;
 
-  /* set pointers. */
-  ret->weight = (float*)((char*)ret + sizeof(gnn_mlp_t));
-  ret->output = ret->weight + ret->total_weights;
-  ret->delta = ret->output + ret->total_neurons;
+  ret->weights = (float*)((char*)ret + sizeof(gnn_mlp_t));
+  ret->outputs = ret->weights + ret->total_weights;
+  ret->biases = ret->outputs + ret->total_neurons;
 
   gnn_mlp_randomize(ret);
 
-  ret->activation_hidden = gnn_mlp_sigmoid;
-  ret->activation_output = gnn_mlp_sigmoid;
+  ret->activation_hidden = gnn_mlp_sigmoid_lookup;
+  ret->activation_output = gnn_mlp_sigmoid_lookup;
 
-//  gnn_mlp_init_sigmoid_lookup(ret);
+  gnn_mlp_sigmoid_init();
 
   return ret;
 }
@@ -94,72 +143,77 @@ gnn_mlp_free(gnn_mlp_t* mlp)
 }
 
 float const*
-gnn_mlp_run(gnn_mlp_t const* mlp,
-            float const* inputs)
+gnn_mlp_forward(gnn_mlp_t const* mlp,
+                float const* inputs)
 {
-  float const* w = mlp->weight;
-  float* o = mlp->output + mlp->inputs;
-  float const* i = mlp->output;
+  float const* w = mlp->weights;
+  float* o = mlp->outputs + mlp->input_number;
+  float const* i = mlp->outputs;
 
   /*!
   ** copy the inputs to the scratch area, where we also store each neuron's
   ** output, for consistency. This way the first layer isn't a special case.
   */
-  memcpy(mlp->output, inputs, sizeof(float) * mlp->inputs);
+  memcpy(mlp->outputs, inputs, sizeof(float) * mlp->input_number);
 
   int h, j, k;
 
-  if (!mlp->hidden_layers) {
+  if (!mlp->hidden_layer_number) {
     float *ret = o;
-    for (j = 0; j < mlp->outputs; ++j) {
+    for (j = 0; j < mlp->output_number; ++j) {
       float sum = *w++ * -1.0;
-      for (k = 0; k < mlp->inputs; ++k) {
+      for (k = 0; k < mlp->input_number; ++k) {
         sum += *w++ * i[k];
       }
       *o++ = mlp->activation_output(sum);
     }
-
     return ret;
   }
 
-  /* Figure input layer */
-  for (j = 0; j < mlp->hidden; ++j) {
+  /*!
+  ** inputs -> hidden neurons in first layer
+  */
+  for (j = 0; j < mlp->hidden_neuron_number; ++j) {
     float sum = *w++ * -1.0;
-    for (k = 0; k < mlp->inputs; ++k) {
+    for (k = 0; k < mlp->input_number; ++k) {
       sum += *w++ * i[k];
     }
     *o++ = mlp->activation_hidden(sum);
   }
 
-  i += mlp->inputs;
+  i += mlp->input_number;
 
-  /* Figure hidden layers, if any. */
-  for (h = 1; h < mlp->hidden_layers; ++h) {
-    for (j = 0; j < mlp->hidden; ++j) {
+  /*!
+  ** hidden layers
+  */
+  for (h = 1; h < mlp->hidden_layer_number; ++h) {
+    for (j = 0; j < mlp->hidden_neuron_number; ++j) {
       float sum = *w++ * -1.0;
-      for (k = 0; k < mlp->hidden; ++k) {
+      for (k = 0; k < mlp->hidden_neuron_number; ++k) {
         sum += *w++ * i[k];
       }
       *o++ = mlp->activation_hidden(sum);
     }
 
-    i += mlp->hidden;
+    i += mlp->hidden_neuron_number;
   }
 
   float const *ret = o;
 
-  /* Figure output layer. */
-  for (j = 0; j < mlp->outputs; ++j) {
+  /*!
+  ** output layer
+  */
+  for (j = 0; j < mlp->output_number; ++j) {
     float sum = *w++ * -1.0;
-    for (k = 0; k < mlp->hidden; ++k) {
+    for (k = 0; k < mlp->hidden_neuron_number; ++k) {
       sum += *w++ * i[k];
     }
     *o++ = mlp->activation_output(sum);
   }
 
   /* Sanity check that we used all weights and wrote all outputs. */
-  assert(w - mlp->weight == mlp->total_weights);
-  assert(o - mlp->output == mlp->total_neurons);
+  assert(w - mlp->weights == mlp->total_weights);
+  assert(o - mlp->outputs == mlp->total_neurons);
 
   return ret;
 }
@@ -170,25 +224,27 @@ gnn_mlp_train(gnn_mlp_t   const*        mlp,
               float      const*        desired_outputs,
               float                    learning_rate)
 {
-  /* To begin with, we must run the network forward. */
-  gnn_mlp_run(mlp, inputs);
+  /*!
+  ** at the beginning, we must run the network forward.
+  */
+  gnn_mlp_forward(mlp, inputs);
 
   int h, j, k;
 
   /* First set the output layer deltas. */
   {
-    float const *o = mlp->output + mlp->inputs
-        + mlp->hidden * mlp->hidden_layers; /* First output. */
-    float *d = mlp->delta + mlp->hidden * mlp->hidden_layers; /* First delta. */
-    float const *t = desired_outputs; /* First desired output. */
+    float const *o = mlp->outputs + mlp->input_number
+        + mlp->hidden_neuron_number * mlp->hidden_layer_number; /* first output. */
+    float *d = mlp->biases + mlp->hidden_neuron_number * mlp->hidden_layer_number; /* first bias. */
+    float const *t = desired_outputs; /* first desired output. */
 
-    /* Set output layer deltas. */
+    /* set output layer deltas. */
     if (mlp->activation_output == gnn_mlp_linear) {
-      for (j = 0; j < mlp->outputs; ++j) {
+      for (j = 0; j < mlp->output_number; ++j) {
         *d++ = *t++ - *o++;
       }
     } else {
-      for (j = 0; j < mlp->outputs; ++j) {
+      for (j = 0; j < mlp->output_number; ++j) {
         *d++ = (*t - *o) * *o * (1.0 - *o);
         ++o;
         ++t;
@@ -200,27 +256,27 @@ gnn_mlp_train(gnn_mlp_t   const*        mlp,
   ** Set hidden layer deltas, start on last layer and work backwards.
   ** Note that loop is skipped in the case of hidden_layers == 0.
   */
-  for (h = mlp->hidden_layers - 1; h >= 0; --h) {
+  for (h = mlp->hidden_layer_number - 1; h >= 0; --h) {
 
     /* Find first output and delta in this layer. */
-    float const *o = mlp->output + mlp->inputs + (h * mlp->hidden);
-    float *d = mlp->delta + (h * mlp->hidden);
+    float const *o = mlp->outputs + mlp->input_number + (h * mlp->hidden_neuron_number);
+    float *d = mlp->biases + (h * mlp->hidden_neuron_number);
 
     /* Find first delta in following layer (which may be hidden or output). */
-    float const* const dd = mlp->delta + ((h + 1) * mlp->hidden);
+    float const* const dd = mlp->biases + ((h + 1) * mlp->hidden_neuron_number);
 
     /* Find first weight in following layer (which may be hidden or output). */
-    float const* const ww = mlp->weight + ((mlp->inputs + 1) * mlp->hidden)
-        + ((mlp->hidden + 1) * mlp->hidden * (h));
+    float const* const ww = mlp->weights + ((mlp->input_number + 1) * mlp->hidden_neuron_number)
+        + ((mlp->hidden_neuron_number + 1) * mlp->hidden_neuron_number * (h));
 
-    for (j = 0; j < mlp->hidden; ++j) {
+    for (j = 0; j < mlp->hidden_neuron_number; ++j) {
 
       float delta = 0;
 
       for (k = 0;
-           k < (h == mlp->hidden_layers - 1 ? mlp->outputs : mlp->hidden); ++k) {
+           k < (h == mlp->hidden_layer_number - 1 ? mlp->output_number : mlp->hidden_neuron_number); ++k) {
         const float forward_delta = dd[k];
-        const int windex = k * (mlp->hidden + 1) + (j + 1);
+        const int windex = k * (mlp->hidden_neuron_number + 1) + (j + 1);
         const float forward_weight = ww[windex];
         delta += forward_delta * forward_weight;
       }
@@ -234,24 +290,24 @@ gnn_mlp_train(gnn_mlp_t   const*        mlp,
   /* Train the outputs. */
   {
     /* Find first output delta. */
-    float const *d = mlp->delta + mlp->hidden * mlp->hidden_layers; /* First output delta. */
+    float const *d = mlp->biases + mlp->hidden_neuron_number * mlp->hidden_layer_number; /* First output delta. */
 
     /* Find first weight to first output delta. */
-    float *w = mlp->weight
-        + (mlp->hidden_layers ?
-            ((mlp->inputs + 1) * mlp->hidden
-                + (mlp->hidden + 1) * mlp->hidden * (mlp->hidden_layers - 1)) :
+    float *w = mlp->weights
+        + (mlp->hidden_layer_number ?
+            ((mlp->input_number + 1) * mlp->hidden_neuron_number
+                + (mlp->hidden_neuron_number + 1) * mlp->hidden_neuron_number * (mlp->hidden_layer_number - 1)) :
             (0));
 
     /* Find first output in previous layer. */
-    float const *const i = mlp->output
-        + (mlp->hidden_layers ?
-            (mlp->inputs + (mlp->hidden) * (mlp->hidden_layers - 1)) : 0);
+    float const *const i = mlp->outputs
+        + (mlp->hidden_layer_number ?
+            (mlp->input_number + (mlp->hidden_neuron_number) * (mlp->hidden_layer_number - 1)) : 0);
 
     /* Set output layer weights. */
-    for (j = 0; j < mlp->outputs; ++j) {
+    for (j = 0; j < mlp->output_number; ++j) {
       *w++ += *d * learning_rate * -1.0;
-      for (k = 1; k < (mlp->hidden_layers ? mlp->hidden : mlp->inputs) + 1;
+      for (k = 1; k < (mlp->hidden_layer_number ? mlp->hidden_neuron_number : mlp->input_number) + 1;
           ++k) {
         *w++ += *d * learning_rate * i[k - 1];
       }
@@ -259,29 +315,29 @@ gnn_mlp_train(gnn_mlp_t   const*        mlp,
       ++d;
     }
 
-    assert(w - mlp->weight == mlp->total_weights);
+    assert(w - mlp->weights == mlp->total_weights);
   }
 
   /* Train the hidden layers. */
-  for (h = mlp->hidden_layers - 1; h >= 0; --h) {
+  for (h = mlp->hidden_layer_number - 1; h >= 0; --h) {
 
     /* Find first delta in this layer. */
-    float const *d = mlp->delta + (h * mlp->hidden);
+    float const *d = mlp->biases + (h * mlp->hidden_neuron_number);
 
     /* Find first input to this layer. */
-    float const *i = mlp->output
-        + (h ? (mlp->inputs + mlp->hidden * (h - 1)) : 0);
+    float const *i = mlp->outputs
+        + (h ? (mlp->input_number + mlp->hidden_neuron_number * (h - 1)) : 0);
 
     /* Find first weight to this layer. */
-    float *w = mlp->weight
+    float *w = mlp->weights
         + (h ?
-            ((mlp->inputs + 1) * mlp->hidden
-                + (mlp->hidden + 1) * (mlp->hidden) * (h - 1)) :
+            ((mlp->input_number + 1) * mlp->hidden_neuron_number
+                + (mlp->hidden_neuron_number + 1) * (mlp->hidden_neuron_number) * (h - 1)) :
             0);
 
-    for (j = 0; j < mlp->hidden; ++j) {
+    for (j = 0; j < mlp->hidden_neuron_number; ++j) {
       *w++ += *d * learning_rate * -1.0;
-      for (k = 1; k < (h == 0 ? mlp->inputs : mlp->hidden) + 1; ++k) {
+      for (k = 1; k < (h == 0 ? mlp->input_number : mlp->hidden_neuron_number) + 1; ++k) {
         *w++ += *d * learning_rate * i[k - 1];
       }
       ++d;
@@ -308,7 +364,7 @@ gnn_mlp_read(FILE* in)
   for (i = 0; i < ret->total_weights; ++i)
   {
     errno = 0;
-    rc = fscanf(in, " %e", ret->weight + i);
+    rc = fscanf(in, " %e", ret->weights + i);
     if (rc < 1 || errno != 0)
     {
       perror("fscanf");
@@ -323,10 +379,10 @@ gnn_mlp_read(FILE* in)
 void
 gnn_mlp_write(gnn_mlp_t const* mlp, FILE* out)
 {
-  fprintf(out, "%d %d %d %d", mlp->inputs, mlp->hidden_layers, mlp->hidden, mlp->outputs);
+  fprintf(out, "%d %d %d %d", mlp->input_number, mlp->hidden_layer_number, mlp->hidden_neuron_number, mlp->output_number);
   int i;
   for (i = 0; i < mlp->total_weights; ++i)
-    fprintf(out, " %.20e", mlp->weight[i]);
+    fprintf(out, " %.20e", mlp->weights[i]);
 
 }
 

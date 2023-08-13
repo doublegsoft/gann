@@ -23,16 +23,16 @@ extern "C" {
 #define GNN_MLP_RANDOM() (((float)rand())/RAND_MAX)
 #endif
 
-struct gnn_mlp_s;
-
 typedef float (*gnn_mlp_activate)(float a);
+
+struct gnn_mlp_s;
 
 typedef struct gnn_mlp_s {
 
   /*!
   ** how many inputs, outputs, and hidden neurons.
   */
-  int                   inputs, hidden_layers, hidden, outputs;
+  int                   input_number, hidden_layer_number, hidden_neuron_number, output_number;
 
   /*!
   ** which activation function to use for hidden neurons. Default: gennann_act_sigmoid_cached
@@ -57,17 +57,17 @@ typedef struct gnn_mlp_s {
   /*!
   ** all weights (total_weights).
   */
-  float*               weight;
+  float*               weights;
 
   /*!
   ** stores input array and output of each neuron (total_neurons).
   */
-  float*               output;
+  float*               outputs;
 
   /*!
   ** stores delta of each hidden and output neuron (total_neurons - inputs).
   */
-  float*               delta;
+  float*               biases;
 
 }
 gnn_mlp_t;
@@ -94,13 +94,13 @@ gnn_mlp_free(gnn_mlp_t* mlp);
 ** @return the output result
 */
 float const*
-gnn_mlp_run(gnn_mlp_t const* mlp,
-            float const* inputs);
+gnn_mlp_forward(gnn_mlp_t const* mlp,
+                float const* inputs);
 
 void
 gnn_mlp_train(gnn_mlp_t   const*        mlp,
-              float      const*        inputs,
-              float      const*        desired_outputs,
+              float       const*        inputs,
+              float       const*        desired_outputs,
               float                    learning_rate);
 
 gnn_mlp_t*
