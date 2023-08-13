@@ -31,41 +31,41 @@ typedef long long                 llong;
 typedef float                     real;
 
 
-double
-gnn_num_random(double mu, double sigma);
+float
+gnn_num_random(float mu, float sigma);
 
 void
-gnn_vec_print(double const* vec, uint size);
+gnn_vec_print(float const* vec, uint size);
 
-double*
-gnn_vec_new(uint size, double seed);
-
-void
-gnn_vec_copy(double* dst, const double* src, uint size);
+float*
+gnn_vec_new(uint size, float seed);
 
 void
-gnn_vec_add(double* dst, const double* addend, uint size);
+gnn_vec_copy(float* dst, const float* src, uint size);
 
 void
-gnn_vec_subtract(double* dst, const double* subtrahend, uint size);
+gnn_vec_add(float* dst, const float* addend, uint size);
 
 void
-gnn_vec_multiply(double* dst, const double* multiplicand, uint size);
+gnn_vec_subtract(float* dst, const float* subtrahend, uint size);
 
 void
-gnn_vec_divide(double* dst, const double* dividend, uint size);
+gnn_vec_multiply(float* dst, const float* multiplicand, uint size);
 
 void
-gnn_vec_add_scalar(double* dst, double addend, uint size);
+gnn_vec_divide(float* dst, const float* dividend, uint size);
 
 void
-gnn_vec_subtract_scalar(double* dst, double subtrahend, uint size);
+gnn_vec_add_scalar(float* dst, float addend, uint size);
 
 void
-gnn_vec_multiply_scalar(double* dst, double multiplicand, uint size);
+gnn_vec_subtract_scalar(float* dst, float subtrahend, uint size);
 
 void
-gnn_vec_divide_scalar(double* dst, double dividend, uint size);
+gnn_vec_multiply_scalar(float* dst, float multiplicand, uint size);
+
+void
+gnn_vec_divide_scalar(float* dst, float dividend, uint size);
 
 
 #ifdef __cplusplus

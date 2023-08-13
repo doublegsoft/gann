@@ -17,24 +17,24 @@
 ** Gaussian generator:
 **   https://phoxis.org/2013/05/04/generating-random-numbers-from-normal-distribution-in-c/
 */
-double
-gnn_num_random(double mu, double sigma)
+float
+gnn_num_random(float mu, float sigma)
 {
 
-  double U1, U2, W, mult;
-  static double X1, X2;
+  float U1, U2, W, mult;
+  static float X1, X2;
   static int call = 0;
 
   if (call == 1)
   {
     call = !call;
-    return (mu + sigma * (double) X2);
+    return (mu + sigma * (float) X2);
   }
 
   do
   {
-    U1 = -1 + ((double) rand () / RAND_MAX) * 2;
-    U2 = -1 + ((double) rand () / RAND_MAX) * 2;
+    U1 = -1 + ((float) rand () / RAND_MAX) * 2;
+    U2 = -1 + ((float) rand () / RAND_MAX) * 2;
     W = pow (U1, 2) + pow (U2, 2);
   } while ( W >= 1 || W == 0 );
 
@@ -44,11 +44,11 @@ gnn_num_random(double mu, double sigma)
 
   call = !call;
 
-  return (mu + sigma * (double) X1);
+  return (mu + sigma * (float) X1);
 }
 
 void
-gnn_vec_print(double const* vec, uint size)
+gnn_vec_print(float const* vec, uint size)
 {
   int i = 0;
   printf("[");
@@ -60,12 +60,12 @@ gnn_vec_print(double const* vec, uint size)
   printf("]\n");
 }
 
-double*
-gnn_vec_new(uint size, double random)
+float*
+gnn_vec_new(uint size, float random)
 {
   int         l       = 0;
-  double*     ret;
-  ret = (double*) calloc(size, sizeof(double));
+  float*     ret;
+  ret = (float*) calloc(size, sizeof(float));
 
   while ( l < size )
   {
@@ -80,7 +80,7 @@ gnn_vec_new(uint size, double random)
 }
 
 void
-gnn_vec_copy(double* dst, const double* src, uint size)
+gnn_vec_copy(float* dst, const float* src, uint size)
 {
   int i = 0;
   for (i = 0; i < size; i++)
@@ -88,7 +88,7 @@ gnn_vec_copy(double* dst, const double* src, uint size)
 }
 
 void
-gnn_vec_add(double* dst, const double* addend, uint size)
+gnn_vec_add(float* dst, const float* addend, uint size)
 {
   int i = 0;
   for (i = 0; i < size; i++)
@@ -96,7 +96,7 @@ gnn_vec_add(double* dst, const double* addend, uint size)
 }
 
 void
-gnn_vec_subtract(double* dst, const double* subtrahend, uint size)
+gnn_vec_subtract(float* dst, const float* subtrahend, uint size)
 {
   int i = 0;
   for (i = 0; i < size; i++)
@@ -104,7 +104,7 @@ gnn_vec_subtract(double* dst, const double* subtrahend, uint size)
 }
 
 void
-gnn_vec_multiply(double* dst, const double* multiplicand, uint size)
+gnn_vec_multiply(float* dst, const float* multiplicand, uint size)
 {
   int i = 0;
   for (i = 0; i < size; i++)
@@ -112,7 +112,7 @@ gnn_vec_multiply(double* dst, const double* multiplicand, uint size)
 }
 
 void
-gnn_vec_divide(double* dst, const double* dividend, uint size)
+gnn_vec_divide(float* dst, const float* dividend, uint size)
 {
   int i = 0;
   for (i = 0; i < size; i++)
@@ -120,7 +120,7 @@ gnn_vec_divide(double* dst, const double* dividend, uint size)
 }
 
 void
-gnn_vec_add_scalar(double* dst, double addend, uint size)
+gnn_vec_add_scalar(float* dst, float addend, uint size)
 {
   int i = 0;
   for (i = 0; i < size; i++)
@@ -128,7 +128,7 @@ gnn_vec_add_scalar(double* dst, double addend, uint size)
 }
 
 void
-gnn_vec_subtract_scalar(double* dst, double subtrahend, uint size)
+gnn_vec_subtract_scalar(float* dst, float subtrahend, uint size)
 {
   int i = 0;
   for (i = 0; i < size; i++)
@@ -136,7 +136,7 @@ gnn_vec_subtract_scalar(double* dst, double subtrahend, uint size)
 }
 
 void
-gnn_vec_multiply_scalar(double* dst, double multiplicand, uint size)
+gnn_vec_multiply_scalar(float* dst, float multiplicand, uint size)
 {
   int i = 0;
   for (i = 0; i < size; i++)
@@ -144,7 +144,7 @@ gnn_vec_multiply_scalar(double* dst, double multiplicand, uint size)
 }
 
 void
-gnn_vec_divide_scalar(double* dst, double dividend, uint size)
+gnn_vec_divide_scalar(float* dst, float dividend, uint size)
 {
   int i = 0;
   for (i = 0; i < size; i++)

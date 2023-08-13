@@ -99,7 +99,7 @@ int main(int argc, char *argv[])
    * 2 hidden layer(s) of 6 neurons.
    * 3 outputs (1 per class)
    */
-  gnn_mlp_t* mlp = gnn_mlp_new(4, 1, 4, 3);
+  gnn_mlp_t* mlp = gnn_mlp_new(4, 2, 6, 3);
 
   int i, j;
   int loops = 5000;
