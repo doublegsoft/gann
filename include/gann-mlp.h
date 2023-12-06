@@ -57,17 +57,17 @@ typedef struct gnn_mlp_s {
   /*!
   ** all weights (total_weights).
   */
-  float*               weights;
+  float*                weights;
 
   /*!
   ** stores input array and output of each neuron (total_neurons).
   */
-  float*               outputs;
+  float*                outputs;
 
   /*!
   ** stores delta of each hidden and output neuron (total_neurons - inputs).
   */
-  float*               biases;
+  float*                biases;
 
 }
 gnn_mlp_t;
