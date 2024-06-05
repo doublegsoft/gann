@@ -101,7 +101,7 @@ void
 gnn_mlp_train(gnn_mlp_t   const*        mlp,
               float       const*        inputs,
               float       const*        desired_outputs,
-              float                    learning_rate);
+              float                     learning_rate);
 
 gnn_mlp_t*
 gnn_mlp_read(FILE* in);

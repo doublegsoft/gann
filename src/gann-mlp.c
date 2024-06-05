@@ -100,7 +100,9 @@ gnn_mlp_new(int input_number,
   if (hidden_layer_number > 0 && hidden_neuron_number < 1) return NULL;
 
 
-  const int hidden_weights = hidden_layer_number ? (input_number + 1) * hidden_neuron_number + (hidden_layer_number - 1) * (hidden_neuron_number + 1) * hidden_neuron_number : 0;
+  const int hidden_weights = hidden_layer_number ?
+                             (input_number + 1) * hidden_neuron_number + (hidden_layer_number - 1) * (hidden_neuron_number + 1) * hidden_neuron_number :
+                             0;
   const int output_weights = (hidden_layer_number ? (hidden_neuron_number + 1) : (input_number + 1)) * output_number;
   const int total_weights = (hidden_weights + output_weights);
 
@@ -220,9 +222,9 @@ gnn_mlp_forward(gnn_mlp_t const* mlp,
 
 void
 gnn_mlp_train(gnn_mlp_t   const*        mlp,
-              float      const*        inputs,
-              float      const*        desired_outputs,
-              float                    learning_rate)
+              float       const*        inputs,
+              float       const*        desired_outputs,
+              float                     learning_rate)
 {
   /*!
   ** at the beginning, we must run the network forward.
